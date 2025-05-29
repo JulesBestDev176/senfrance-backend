@@ -1,4 +1,4 @@
-// server.js
+// server.js - Version optimisée pour Render
 const express = require('express');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
@@ -8,9 +8,13 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware CORS - CORRECTION AJOUT PORT 8081
+// Configuration CORS pour production et development
 const corsOrigins = process.env.NODE_ENV === 'production' 
-  ? (process.env.CORS_ORIGIN || '').split(',').filter(Boolean)
+  ? [
+      'https://senfrance-reprise-voyage.onrender.com',
+      'https://www.senfrance-reprise-voyage.onrender.com',
+      process.env.CORS_ORIGIN
+    ].filter(Boolean)
   : [
       'http://localhost:3000',
       'http://localhost:5173',
@@ -32,7 +36,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Logging middleware
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.get('Origin')}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.get('Origin') || 'N/A'}`);
   next();
 });
 
@@ -45,13 +49,13 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Rate limiting
+// Rate limiting ajusté pour production
 const emailLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW) || 60 * 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_MAX) || (process.env.NODE_ENV === 'production' ? 10 : 5),
   message: {
     success: false,
-    message: 'Trop de messages envoyés. Réessayez plus tard.'
+    message: 'Trop de messages envoyés. Réessayez dans une heure.'
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -72,18 +76,36 @@ app.get('/', (req, res) => {
     message: 'Serveur SenFrance opérationnel',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
-    cors: 'enabled'
+    cors: 'enabled',
+    port: PORT,
+    emailConfigured: !!process.env.EMAIL_USER
   });
 });
 
-// Route de santé
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+// Route de santé pour Render
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'OK',
     uptime: process.uptime(),
-    cors: 'enabled',
-    emailConfigured: !!process.env.EMAIL_USER
-  });
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    port: PORT,
+    services: {
+      email: 'unknown',
+      cors: corsOrigins.length > 0 ? 'configured' : 'not configured'
+    }
+  };
+
+  try {
+    await transporter.verify();
+    health.services.email = 'connected';
+  } catch (error) {
+    health.services.email = 'disconnected';
+    health.status = 'DEGRADED';
+  }
+
+  const status = health.services.email === 'connected' ? 200 : 503;
+  res.status(status).json(health);
 });
 
 // OPTIONS pour preflight CORS
@@ -186,8 +208,8 @@ app.post('/api/contact', emailLimiter, async (req, res) => {
             </div>
             
             <div class="footer">
-              <p>Message envoyé depuis le formulaire de contact SenFrance</p>
-              <p>15 quai des Chartrons, Bordeaux - France</p>
+              <p>Message envoyé depuis le site SenFrance</p>
+              <p>Environnement: ${process.env.NODE_ENV}</p>
             </div>
           </div>
         </body>
@@ -244,7 +266,7 @@ app.post('/api/contact', emailLimiter, async (req, res) => {
                 </ul>
                 
                 <div style="text-align: center; margin-top: 20px;">
-                  <a href="https://senfrance.com/services" class="btn">Découvrir nos services</a>
+                  <a href="https://senfrance-reprise-voyage.onrender.com" class="btn">Visiter notre site</a>
                 </div>
               </div>
               
@@ -256,8 +278,7 @@ app.post('/api/contact', emailLimiter, async (req, res) => {
             
             <div class="footer">
               <p><strong>SenFrance</strong> - Votre partenaire pour les études en France</p>
-              <p>15 quai des Chartrons, 33000 Bordeaux - France</p>
-              <p><a href="https://senfrance.com">www.senfrance.com</a></p>
+              <p>Message envoyé automatiquement depuis notre plateforme</p>
             </div>
           </div>
         </body>
@@ -309,13 +330,14 @@ app.use('*', (req, res) => {
 });
 
 // Démarrage du serveur
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 Serveur SenFrance démarré`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌍 Environnement: ${process.env.NODE_ENV}`);
   console.log(`📧 Email configuré: ${process.env.EMAIL_USER}`);
-  console.log(`🔗 URL: http://localhost:${PORT}`);
-  console.log(`✅ CORS configuré pour les ports: 3000, 5173, 8080, 8081, 4173\n`);
+  console.log(`🔗 URL: ${process.env.NODE_ENV === 'production' ? 'https://senfrance-backend.onrender.com' : `http://localhost:${PORT}`}`);
+  console.log(`✅ CORS configuré pour:`, corsOrigins);
+  console.log(`📊 Rate limiting: ${process.env.NODE_ENV === 'production' ? '10' : '5'} emails/heure\n`);
 });
 
 // Gestion propre de l'arrêt
