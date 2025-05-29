@@ -9,16 +9,19 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware CORS - CORRECTION AJOUT PORT 8081
+const corsOrigins = process.env.NODE_ENV === 'production' 
+  ? (process.env.CORS_ORIGIN || '').split(',').filter(Boolean)
+  : [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:8080',
+      'http://localhost:8081',
+      'http://127.0.0.1:8081',
+      'http://localhost:4173'
+    ];
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',    // Create React App
-    'http://localhost:5173',    // Vite par défaut
-    'http://localhost:8080',    // Vite alternatif
-    'http://localhost:8081',    // Votre port frontend
-    'http://127.0.0.1:8081',    // Alternative avec 127.0.0.1
-    'http://localhost:4173',
-    'https://senfrance-reprise-voyage.onrender.com'
-  ],
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -44,11 +47,11 @@ const transporter = nodemailer.createTransport({
 
 // Rate limiting
 const emailLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 heure
-  max: 5, // 5 requêtes max
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW) || 60 * 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX) || (process.env.NODE_ENV === 'production' ? 10 : 5),
   message: {
     success: false,
-    message: 'Trop de messages envoyés. Réessayez dans une heure.'
+    message: 'Trop de messages envoyés. Réessayez plus tard.'
   },
   standardHeaders: true,
   legacyHeaders: false,
