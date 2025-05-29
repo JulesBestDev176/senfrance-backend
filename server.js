@@ -1,4 +1,4 @@
-// server.js - Version optimisée pour Render
+// server.js - Version corrigée
 const express = require('express');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
@@ -24,24 +24,45 @@ const corsOrigins = process.env.NODE_ENV === 'production'
       'http://localhost:4173'
     ];
 
+console.log('🔗 CORS Origins autorisées:', corsOrigins);
+
+// Configuration CORS
 app.use(cors({
-  origin: corsOrigins,
+  origin: function (origin, callback) {
+    console.log('🌐 Origin reçue:', origin);
+    
+    // Permettre les requêtes sans origin (ex: Postman, mobile apps)
+    if (!origin) return callback(null, true);
+    
+    if (corsOrigins.includes(origin)) {
+      console.log('✅ Origin autorisée:', origin);
+      callback(null, true);
+    } else {
+      console.log('❌ CORS bloqué pour origine:', origin);
+      callback(new Error('Non autorisé par CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Middlewares de base
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Logging middleware
+// Logging middleware unifié
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.get('Origin') || 'N/A'}`);
+  if (req.method === 'POST') {
+    console.log('📦 Body:', req.body);
+  }
   next();
 });
 
 // Configuration Nodemailer
-const transporter = nodemailer.createTransport({
+const transporter = nodemailer.createTransporter({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
@@ -49,7 +70,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Rate limiting ajusté pour production
+// Rate limiting
 const emailLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW) || 60 * 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_MAX) || (process.env.NODE_ENV === 'production' ? 10 : 5),
@@ -78,7 +99,8 @@ app.get('/', (req, res) => {
     environment: process.env.NODE_ENV,
     cors: 'enabled',
     port: PORT,
-    emailConfigured: !!process.env.EMAIL_USER
+    emailConfigured: !!process.env.EMAIL_USER,
+    corsOrigins: corsOrigins
   });
 });
 
@@ -108,12 +130,21 @@ app.get('/health', async (req, res) => {
   res.status(status).json(health);
 });
 
-// OPTIONS pour preflight CORS
-app.options('/api/contact', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.get('Origin'));
-  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.header('Access-Control-Allow-Credentials', 'true');
+// Middleware explicite pour OPTIONS (preflight)
+app.options('*', (req, res) => {
+  const origin = req.get('Origin');
+  console.log('🔄 OPTIONS request from:', origin);
+  
+  if (corsOrigins.includes(origin) || !origin) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400');
+    console.log('✅ OPTIONS headers set for origin:', origin);
+  } else {
+    console.log('❌ OPTIONS denied for origin:', origin);
+  }
   res.sendStatus(200);
 });
 
