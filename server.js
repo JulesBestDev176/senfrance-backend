@@ -251,7 +251,7 @@ app.post('/api/contact', emailLimiter, async (req, res) => {
 
     // Email de confirmation pour l'expéditeur
     const confirmationMailOptions = {
-      from: process.env.EMAIL_USER,
+      from: 'contact@senfrance.com',
       to: email,
       subject: '✅ Confirmation de réception - SenFrance',
       html: `
